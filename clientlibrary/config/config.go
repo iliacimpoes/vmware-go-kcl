@@ -178,6 +178,12 @@ type (
 		// StreamName is the name of Kinesis stream
 		StreamName string
 
+		// ConsumerName is the name of Kinesis consumer. Is used for enhanced fan-out
+		ConsumerName string
+
+		// ConsumerARN is the ARN of Kinesis consumer. Is used for enhanced fan-out
+		ConsumerARN string
+
 		// WorkerID used to distinguish different workers/processes of a Kinesis application
 		WorkerID string
 

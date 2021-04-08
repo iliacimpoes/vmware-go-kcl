@@ -233,6 +233,23 @@ func (w *Worker) newShardConsumer(shard *par.ShardStatus) *ShardConsumer {
 	}
 }
 
+// newShardConsumer to create a shard consumer instance
+func (w *Worker) newFanoutShardConsumer(shard *par.ShardStatus) *FanOutShardConsumer {
+	return &FanOutShardConsumer{
+		streamName:      w.streamName,
+		consumerARN:     w.kclConfig.ConsumerARN,
+		shard:           shard,
+		kc:              w.kc,
+		checkpointer:    w.checkpointer,
+		recordProcessor: w.processorFactory.CreateProcessor(),
+		kclConfig:       w.kclConfig,
+		consumerID:      w.workerID,
+		stop:            w.stop,
+		mService:        w.mService,
+		state:           WAITING_ON_PARENT_SHARDS,
+	}
+}
+
 // eventLoop
 func (w *Worker) eventLoop() {
 	log := w.kclConfig.Logger
@@ -300,8 +317,8 @@ func (w *Worker) eventLoop() {
 				// log metrics on got lease
 				w.mService.LeaseGained(shard.ID)
 
-				log.Infof("Start Shard Consumer for shard: %v", shard.ID)
-				sc := w.newShardConsumer(shard)
+				log.Infof("Start Fan-out Shard Consumer for shard: %v", shard.ID)
+				sc := w.newFanoutShardConsumer(shard)
 				w.waitGroup.Add(1)
 				go func() {
 					defer w.waitGroup.Done()
