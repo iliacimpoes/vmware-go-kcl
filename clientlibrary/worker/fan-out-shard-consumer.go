@@ -120,6 +120,10 @@ func (sc *FanOutShardConsumer) getRecords(shard *par.ShardStatus) error {
 		return err
 	}
 	defer func() {
+		if shardSub == nil || shardSub.EventStream == nil {
+			log.Debugf("Nothing to close, EventStream is nil")
+			return
+		}
 		err = shardSub.EventStream.Close()
 		if err != nil {
 			log.Errorf("Unable to close event stream for %s: %v", shard.ID, err)
@@ -201,10 +205,24 @@ func (sc *FanOutShardConsumer) getRecords(shard *par.ShardStatus) error {
 			default:
 			}
 		}
+		log.Debugf("Event stream ended, refreshing subscription on shard: %s for worker: %s", shard.ID, sc.consumerID)
 		// need to resubscribe to shard
 		err = shardSub.EventStream.Close()
 		if err != nil {
 			log.Errorf("Unable to close event stream for %s: %v", shard.ID, err)
+			return err
+		}
+		log.Debugf("Refreshing lease before resubscribe on shard: %s for worker: %s", shard.ID, sc.consumerID)
+		err = sc.checkpointer.GetLease(shard, sc.consumerID)
+		if err != nil {
+			if err.Error() == chk.ErrLeaseNotAquired {
+				log.Warnf("Failed in acquiring lease on shard: %s for worker: %s", shard.ID, sc.consumerID)
+				return nil
+			}
+			// log and return error
+			log.Errorf("Error in refreshing lease on shard: %s for worker: %s. Error: %+v",
+				shard.ID, sc.consumerID, err)
+			return err
 		}
 		startPosition := &kinesis.StartingPosition{
 			Type:           aws.String("AFTER_SEQUENCE_NUMBER"),
