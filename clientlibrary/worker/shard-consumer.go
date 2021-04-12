@@ -192,6 +192,13 @@ func (sc *ShardConsumer) getRecords() error {
 		}
 		shardIterator = getResp.NextShardIterator
 
+		// Idle between each read, the user is responsible for checkpoint the progress
+		// This value is only used when no records are returned; if records are returned, it should immediately
+		// retrieve the next set of records.
+		if len(getResp.Records) == 0 && processRecordsInput.MillisBehindLatest < int64(sc.kclConfig.IdleTimeBetweenReadsInMillis) {
+			time.Sleep(time.Duration(sc.kclConfig.IdleTimeBetweenReadsInMillis) * time.Millisecond)
+		}
+
 		select {
 		case <-*sc.stop:
 			shutdownInput := &kcl.ShutdownInput{ShutdownReason: kcl.REQUESTED, Checkpointer: recordCheckpointer}
@@ -274,34 +281,6 @@ func (sc *commonShardConsumer) processRecords(input *kcl.ProcessRecordsInput) {
 		// Convert from nanoseconds to milliseconds
 		processedRecordsTiming := time.Since(processRecordsStartTime) / 1000000
 		sc.mService.RecordProcessRecordsTime(sc.shard.ID, float64(processedRecordsTiming))
-	}
-
-	sc.mService.IncrRecordsProcessed(sc.shard.ID, recordLength)
-	sc.mService.IncrBytesProcessed(sc.shard.ID, recordBytes)
-	sc.mService.MillisBehindLatest(sc.shard.ID, float64(input.MillisBehindLatest))
-
-	// Idle between each read, the user is responsible for checkpoint the progress
-	// This value is only used when no records are returned; if records are returned, it should immediately
-	// retrieve the next set of records.
-	if recordLength == 0 && input.MillisBehindLatest < int64(sc.kclConfig.IdleTimeBetweenReadsInMillis) {
-		time.Sleep(time.Duration(sc.kclConfig.IdleTimeBetweenReadsInMillis) * time.Millisecond)
-	}
-
-	sc.kclConfig.Logger.Debugf("Received %d records, MillisBehindLatest: %v", len(input.Records), input.MillisBehindLatest)
-
-	if len(input.Records) > 0 || sc.kclConfig.CallProcessRecordsEvenForEmptyRecordList {
-		processRecordsStartTime := time.Now()
-
-		// Delivery the events to the record processor
-		sc.recordProcessor.ProcessRecords(input)
-
-		// Convert from nanoseconds to milliseconds
-		processedRecordsTiming := time.Since(processRecordsStartTime) / 1000000
-		sc.mService.RecordProcessRecordsTime(sc.shard.ID, float64(processedRecordsTiming))
-	}
-
-	for _, r := range input.Records {
-		recordBytes += int64(len(r.Data))
 	}
 
 	sc.mService.IncrRecordsProcessed(sc.shard.ID, recordLength)

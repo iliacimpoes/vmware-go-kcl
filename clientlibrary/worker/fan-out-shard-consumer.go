@@ -79,7 +79,6 @@ func (sc *FanOutShardConsumer) getRecords() error {
 
 	var continuationSequenceNumber *string
 	refreshLease := time.After(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond).Sub(time.Now()))
-	eventsCh := shardSub.EventStream.Events()
 	for {
 		select {
 		case <-*sc.stop:
@@ -100,7 +99,7 @@ func (sc *FanOutShardConsumer) getRecords() error {
 				return err
 			}
 			refreshLease = time.After(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond).Sub(time.Now()))
-		case event, ok := <-eventsCh:
+		case event, ok := <-shardSub.EventStream.Events():
 			if !ok {
 				// need to resubscribe to shard
 				log.Debugf("Event stream ended, refreshing subscription on shard: %s for worker: %s", sc.shard.ID, sc.consumerID)
@@ -112,7 +111,6 @@ func (sc *FanOutShardConsumer) getRecords() error {
 				if err != nil {
 					return err
 				}
-				eventsCh = shardSub.EventStream.Events()
 				continue
 			}
 			subEvent, ok := event.(*kinesis.SubscribeToShardEvent)
