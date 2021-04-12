@@ -220,33 +220,34 @@ func (w *Worker) initialize() error {
 // newShardConsumer to create a shard consumer instance
 func (w *Worker) newShardConsumer(shard *par.ShardStatus) *ShardConsumer {
 	return &ShardConsumer{
-		streamName:      w.streamName,
-		shard:           shard,
-		kc:              w.kc,
-		checkpointer:    w.checkpointer,
-		recordProcessor: w.processorFactory.CreateProcessor(),
-		kclConfig:       w.kclConfig,
-		consumerID:      w.workerID,
-		stop:            w.stop,
-		mService:        w.mService,
-		state:           WAITING_ON_PARENT_SHARDS,
+		commonShardConsumer: commonShardConsumer{
+			shard:           shard,
+			kc:              w.kc,
+			checkpointer:    w.checkpointer,
+			recordProcessor: w.processorFactory.CreateProcessor(),
+			kclConfig:       w.kclConfig,
+			mService:        w.mService,
+		},
+		streamName: w.streamName,
+		consumerID: w.workerID,
+		stop:       w.stop,
+		mService:   w.mService,
 	}
 }
 
 // newShardConsumer to create a shard consumer instance
 func (w *Worker) newFanoutShardConsumer(shard *par.ShardStatus) *FanOutShardConsumer {
 	return &FanOutShardConsumer{
-		streamName:      w.streamName,
-		consumerARN:     w.kclConfig.ConsumerARN,
-		shard:           shard,
-		kc:              w.kc,
-		checkpointer:    w.checkpointer,
-		recordProcessor: w.processorFactory.CreateProcessor(),
-		kclConfig:       w.kclConfig,
-		consumerID:      w.workerID,
-		stop:            w.stop,
-		mService:        w.mService,
-		state:           WAITING_ON_PARENT_SHARDS,
+		commonShardConsumer: commonShardConsumer{
+			shard:           shard,
+			kc:              w.kc,
+			checkpointer:    w.checkpointer,
+			recordProcessor: w.processorFactory.CreateProcessor(),
+			kclConfig:       w.kclConfig,
+			mService:        w.mService,
+		},
+		consumerID: w.workerID,
+		stop:       w.stop,
 	}
 }
 
@@ -322,7 +323,7 @@ func (w *Worker) eventLoop() {
 				w.waitGroup.Add(1)
 				go func() {
 					defer w.waitGroup.Done()
-					if err := sc.getRecords(shard); err != nil {
+					if err := sc.getRecords(); err != nil {
 						log.Errorf("Error in getRecords: %+v", err)
 					}
 				}()
