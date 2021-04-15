@@ -21,9 +21,9 @@ package config
 import (
 	"testing"
 
-	"github.com/vmware/vmware-go-kcl/logger"
-
 	"github.com/stretchr/testify/assert"
+
+	"github.com/vmware/vmware-go-kcl/logger"
 )
 
 func TestConfig(t *testing.T) {
