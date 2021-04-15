@@ -56,7 +56,7 @@ func (sc *FanOutShardConsumer) getRecords() error {
 
 	shardSub, err := sc.subscribeToShard()
 	if err != nil {
-		log.Errorf("Unable to get shard iterator for %s: %v", sc.shard.ID, err)
+		log.Errorf("Unable to subscribe to shard %s: %v", sc.shard.ID, err)
 		return err
 	}
 	defer func() {
@@ -93,9 +93,7 @@ func (sc *FanOutShardConsumer) getRecords() error {
 					log.Warnf("Failed in acquiring lease on shard: %s for worker: %s", sc.shard.ID, sc.consumerID)
 					return nil
 				}
-				// log and return error
-				log.Errorf("Error in refreshing lease on shard: %s for worker: %s. Error: %+v",
-					sc.shard.ID, sc.consumerID, err)
+				log.Errorf("Error in refreshing lease on shard: %s for worker: %s. Error: %+v", sc.shard.ID, sc.consumerID, err)
 				return err
 			}
 			refreshLeaseTimer = time.After(time.Until(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond)))
