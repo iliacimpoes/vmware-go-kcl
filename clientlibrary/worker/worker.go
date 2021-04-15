@@ -29,6 +29,7 @@ package worker
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"sync"
@@ -263,7 +264,7 @@ func (w *Worker) fetchConsumerARN() (string, error) {
 	if err == nil {
 		log.Infof("Enhanced fan-out consumer found, consumer status: %s", *streamConsumerDescription.ConsumerDescription.ConsumerStatus)
 		if *streamConsumerDescription.ConsumerDescription.ConsumerStatus != kinesis.ConsumerStatusActive {
-			return "", errors.New("consumer is not in active state yet")
+			return "", fmt.Errorf("consumer is not in active status yet, current status: %s", *streamConsumerDescription.ConsumerDescription.ConsumerStatus)
 		}
 		return *streamConsumerDescription.ConsumerDescription.ConsumerARN, nil
 	}
@@ -277,8 +278,8 @@ func (w *Worker) fetchConsumerARN() (string, error) {
 			log.Errorf("Could not register enhanced fan-out consumer: %v", err)
 			return "", err
 		}
-		if *streamConsumerDescription.ConsumerDescription.ConsumerStatus != kinesis.ConsumerStatusActive {
-			return "", errors.New("consumer is not in active state yet")
+		if *out.Consumer.ConsumerStatus != kinesis.ConsumerStatusActive {
+			return "", fmt.Errorf("consumer is not in active status yet, current status: %s", *out.Consumer.ConsumerStatus)
 		}
 		return *out.Consumer.ConsumerARN, nil
 	}
