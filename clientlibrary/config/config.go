@@ -178,11 +178,9 @@ type (
 		// StreamName is the name of Kinesis stream
 		StreamName string
 
-		// ConsumerName is the name of Kinesis consumer. Is used for enhanced fan-out
-		ConsumerName string
-
-		// ConsumerARN is the ARN of Kinesis consumer. Is used for enhanced fan-out
-		ConsumerARN string
+		// EnhancedFanOutConsumerName is the name of Kinesis Enhanced Fan-Out consumer.
+		// Is required when enhanced fan-out is enabled
+		EnhancedFanOutConsumerName string
 
 		// WorkerID used to distinguish different workers/processes of a Kinesis application
 		WorkerID string
@@ -192,6 +190,10 @@ type (
 
 		// InitialPositionInStreamExtended provides actual AT_TMESTAMP value
 		InitialPositionInStreamExtended InitialPositionInStreamExtended
+
+		// EnhancedFanOutConsumer enables enhanced fan-out consumer
+		// See: https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html
+		EnhancedFanOutConsumer bool
 
 		// credentials to access Kinesis/Dynamo: https://docs.aws.amazon.com/sdk-for-go/api/aws/credentials/
 		// Note: No need to configure here. Use NewEnvCredentials for testing and EC2RoleProvider for production
@@ -277,11 +279,11 @@ func empty(s string) bool {
 	return len(strings.TrimSpace(s)) == 0
 }
 
-// checkIsValuePositive make sure the value is possitive.
+// checkIsValueNotEmpty make sure the value is not empty.
 func checkIsValueNotEmpty(key string, value string) {
 	if empty(value) {
 		// There is no point to continue for incorrect configuration. Fail fast!
-		log.Panicf("Non-empty value exepected for %v, actual: %v", key, value)
+		log.Panicf("Non-empty value expected for %v, actual: %v", key, value)
 	}
 }
 
@@ -289,6 +291,6 @@ func checkIsValueNotEmpty(key string, value string) {
 func checkIsValuePositive(key string, value int) {
 	if value <= 0 {
 		// There is no point to continue for incorrect configuration. Fail fast!
-		log.Panicf("Positive value exepected for %v, actual: %v", key, value)
+		log.Panicf("Positive value expected for %v, actual: %v", key, value)
 	}
 }

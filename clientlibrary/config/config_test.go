@@ -19,8 +19,9 @@
 package config
 
 import (
-	"github.com/vmware/vmware-go-kcl/logger"
 	"testing"
+
+	"github.com/vmware/vmware-go-kcl/logger"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -32,13 +33,23 @@ func TestConfig(t *testing.T) {
 		WithInitialPositionInStream(TRIM_HORIZON).
 		WithIdleTimeBetweenReadsInMillis(20).
 		WithCallProcessRecordsEvenForEmptyRecordList(true).
-		WithTaskBackoffTimeMillis(10)
+		WithTaskBackoffTimeMillis(10).
+		WithEnhancedFanOutConsumer("fan-out-consumer")
 
 	assert.Equal(t, "appName", kclConfig.ApplicationName)
 	assert.Equal(t, 500, kclConfig.FailoverTimeMillis)
 	assert.Equal(t, 10, kclConfig.TaskBackoffTimeMillis)
+	assert.True(t, kclConfig.EnhancedFanOutConsumer)
+	assert.Equal(t, "fan-out-consumer", kclConfig.EnhancedFanOutConsumerName)
 
 	contextLogger := kclConfig.Logger.WithFields(logger.Fields{"key1": "value1"})
 	contextLogger.Debugf("Starting with default logger")
 	contextLogger.Infof("Default logger is awesome")
+}
+
+func TestEmptyEnhancedFanOutConsumerName(t *testing.T) {
+	assert.PanicsWithValue(t, "Non-empty value expected for EnhancedFanOutConsumerName, actual: ", func() {
+		NewKinesisClientLibConfig("app", "stream", "us-west-2", "worker").WithEnhancedFanOutConsumer("")
+	})
+
 }
