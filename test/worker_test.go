@@ -32,6 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
+
 	cfg "github.com/vmware/vmware-go-kcl/clientlibrary/config"
 	kc "github.com/vmware/vmware-go-kcl/clientlibrary/interfaces"
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics"
@@ -44,9 +45,11 @@ import (
 )
 
 const (
-	streamName = "kcl-test"
-	regionName = "us-west-2"
-	workerID   = "test-worker"
+	appName      = "appName"
+	streamName   = "kcl-test"
+	regionName   = "us-west-2"
+	workerID     = "test-worker"
+	consumerName = "enhanced-fan-out-consumer"
 )
 
 const specstr = `{"name":"kube-qQyhk","networking":{"containerNetworkCidr":"10.2.0.0/16"},"orgName":"BVT-Org-cLQch","projectName":"project-tDSJd","serviceLevel":"DEVELOPER","size":{"count":1},"version":"1.8.1-4"}`
@@ -71,7 +74,7 @@ func TestWorker(t *testing.T) {
 	// Use logrus logger
 	log := logger.NewLogrusLoggerWithConfig(config)
 
-	kclConfig := cfg.NewKinesisClientLibConfig("appName", streamName, regionName, workerID).
+	kclConfig := cfg.NewKinesisClientLibConfig(appName, streamName, regionName, workerID).
 		WithInitialPositionInStream(cfg.LATEST).
 		WithMaxRecords(10).
 		WithMaxLeasesForWorker(1).
@@ -93,7 +96,7 @@ func TestWorkerWithTimestamp(t *testing.T) {
 	log := logger.NewLogrusLoggerWithConfig(config)
 
 	ts := time.Now().Add(time.Second * 5)
-	kclConfig := cfg.NewKinesisClientLibConfig("appName", streamName, regionName, workerID).
+	kclConfig := cfg.NewKinesisClientLibConfig(appName, streamName, regionName, workerID).
 		WithTimestampAtInitialPositionInStream(&ts).
 		WithMaxRecords(10).
 		WithMaxLeasesForWorker(1).
@@ -123,7 +126,7 @@ func TestWorkerWithSigInt(t *testing.T) {
 	// use zap logger
 	log := zaplogger.NewZapLoggerWithConfig(config)
 
-	kclConfig := cfg.NewKinesisClientLibConfig("appName", streamName, regionName, workerID).
+	kclConfig := cfg.NewKinesisClientLibConfig(appName, streamName, regionName, workerID).
 		WithInitialPositionInStream(cfg.LATEST).
 		WithMaxRecords(10).
 		WithMaxLeasesForWorker(1).
@@ -139,7 +142,7 @@ func TestWorkerStatic(t *testing.T) {
 
 	creds := credentials.NewStaticCredentials("AccessKeyId", "SecretAccessKey", "")
 
-	kclConfig := cfg.NewKinesisClientLibConfigWithCredential("appName", streamName, regionName, workerID, creds).
+	kclConfig := cfg.NewKinesisClientLibConfigWithCredential(appName, streamName, regionName, workerID, creds).
 		WithInitialPositionInStream(cfg.LATEST).
 		WithMaxRecords(10).
 		WithMaxLeasesForWorker(1).
@@ -161,12 +164,41 @@ func TestWorkerAssumeRole(t *testing.T) {
 	// referenced by the "myRoleARN" ARN.
 	creds := stscreds.NewCredentials(sess, "arn:aws:iam::*:role/kcl-test-publisher")
 
-	kclConfig := cfg.NewKinesisClientLibConfigWithCredential("appName", streamName, regionName, workerID, creds).
+	kclConfig := cfg.NewKinesisClientLibConfigWithCredential(appName, streamName, regionName, workerID, creds).
 		WithInitialPositionInStream(cfg.LATEST).
 		WithMaxRecords(10).
 		WithMaxLeasesForWorker(1).
 		WithShardSyncIntervalMillis(5000).
 		WithFailoverTimeMillis(300000)
+
+	runTest(kclConfig, false, t)
+}
+
+func TestEnhancedFanOutConsumer(t *testing.T) {
+	// At miminal. use standard logrus logger
+	// log := logger.NewLogrusLogger(logrus.StandardLogger())
+	//
+	// In order to have precise control over logging. Use logger with config
+	config := logger.Configuration{
+		EnableConsole:     true,
+		ConsoleLevel:      logger.Debug,
+		ConsoleJSONFormat: false,
+		EnableFile:        true,
+		FileLevel:         logger.Info,
+		FileJSONFormat:    true,
+		Filename:          "log.log",
+	}
+	// Use logrus logger
+	log := logger.NewLogrusLoggerWithConfig(config)
+
+	kclConfig := cfg.NewKinesisClientLibConfig(appName, streamName, regionName, workerID).
+		WithInitialPositionInStream(cfg.LATEST).
+		WithEnhancedFanOutConsumer(consumerName).
+		WithMaxRecords(10).
+		WithMaxLeasesForWorker(1).
+		WithShardSyncIntervalMillis(5000).
+		WithFailoverTimeMillis(300000).
+		WithLogger(log)
 
 	runTest(kclConfig, false, t)
 }
