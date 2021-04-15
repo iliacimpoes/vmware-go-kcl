@@ -97,7 +97,7 @@ func (sc *ShardConsumer) getRecords() error {
 	// Start processing events and notify record processor on shard and starting checkpoint
 	input := &kcl.InitializationInput{
 		ShardId:                sc.shard.ID,
-		ExtendedSequenceNumber: &kcl.ExtendedSequenceNumber{SequenceNumber: aws.String(sc.shard.Checkpoint)},
+		ExtendedSequenceNumber: &kcl.ExtendedSequenceNumber{SequenceNumber: aws.String(sc.shard.GetCheckpoint())},
 	}
 	sc.recordProcessor.Initialize(input)
 
@@ -217,11 +217,12 @@ func (sc *commonShardConsumer) getStartingPosition() (*kinesis.StartingPosition,
 		return nil, err
 	}
 
-	if sc.shard.Checkpoint != "" {
-		sc.kclConfig.Logger.Debugf("Start shard: %v at checkpoint: %v", sc.shard.ID, sc.shard.Checkpoint)
+	checkpoint := sc.shard.GetCheckpoint()
+	if checkpoint != "" {
+		sc.kclConfig.Logger.Debugf("Start shard: %v at checkpoint: %v", sc.shard.ID, checkpoint)
 		return &kinesis.StartingPosition{
 			Type:           aws.String("AFTER_SEQUENCE_NUMBER"),
-			SequenceNumber: &sc.shard.Checkpoint,
+			SequenceNumber: &checkpoint,
 		}, nil
 	}
 
@@ -248,7 +249,7 @@ func (sc *commonShardConsumer) waitOnParentShard() error {
 
 	pshard := &par.ShardStatus{
 		ID:  sc.shard.ParentShardId,
-		Mux: &sync.Mutex{},
+		Mux: &sync.RWMutex{},
 	}
 
 	for {
@@ -257,7 +258,7 @@ func (sc *commonShardConsumer) waitOnParentShard() error {
 		}
 
 		// Parent shard is finished.
-		if pshard.Checkpoint == chk.SHARD_END {
+		if pshard.GetCheckpoint() == chk.SHARD_END {
 			return nil
 		}
 

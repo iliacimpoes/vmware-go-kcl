@@ -72,7 +72,7 @@ func (sc *FanOutShardConsumer) getRecords() error {
 
 	input := &kcl.InitializationInput{
 		ShardId:                sc.shard.ID,
-		ExtendedSequenceNumber: &kcl.ExtendedSequenceNumber{SequenceNumber: aws.String(sc.shard.Checkpoint)},
+		ExtendedSequenceNumber: &kcl.ExtendedSequenceNumber{SequenceNumber: aws.String(sc.shard.GetCheckpoint())},
 	}
 	sc.recordProcessor.Initialize(input)
 	recordCheckpointer := NewRecordProcessorCheckpoint(sc.shard, sc.checkpointer)

@@ -170,9 +170,9 @@ func (checkpointer *DynamoCheckpoint) GetLease(shard *par.ShardStatus, newAssign
 		marshalledCheckpoint[PARENT_SHARD_ID_KEY] = &dynamodb.AttributeValue{S: aws.String(shard.ParentShardId)}
 	}
 
-	if shard.Checkpoint != "" {
+	if shard.GetCheckpoint() != "" {
 		marshalledCheckpoint[CHECKPOINT_SEQUENCE_NUMBER_KEY] = &dynamodb.AttributeValue{
-			S: aws.String(shard.Checkpoint),
+			S: aws.String(shard.GetCheckpoint()),
 		}
 	}
 
@@ -202,7 +202,7 @@ func (checkpointer *DynamoCheckpoint) CheckpointSequence(shard *par.ShardStatus)
 			S: aws.String(shard.ID),
 		},
 		CHECKPOINT_SEQUENCE_NUMBER_KEY: {
-			S: aws.String(shard.Checkpoint),
+			S: aws.String(shard.GetCheckpoint()),
 		},
 		LEASE_OWNER_KEY: {
 			S: aws.String(shard.AssignedTo),
@@ -231,12 +231,10 @@ func (checkpointer *DynamoCheckpoint) FetchCheckpoint(shard *par.ShardStatus) er
 		return ErrSequenceIDNotFound
 	}
 	checkpointer.log.Debugf("Retrieved Shard Iterator %s", *sequenceID.S)
-	shard.Mux.Lock()
-	defer shard.Mux.Unlock()
-	shard.Checkpoint = aws.StringValue(sequenceID.S)
+	shard.SetCheckpoint(aws.StringValue(sequenceID.S))
 
 	if assignedTo, ok := checkpoint[LEASE_OWNER_KEY]; ok {
-		shard.AssignedTo = aws.StringValue(assignedTo.S)
+		shard.SetLeaseOwner(aws.StringValue(assignedTo.S))
 	}
 	return nil
 }

@@ -357,7 +357,7 @@ func (w *Worker) eventLoop() {
 		// Count the number of leases hold by this worker excluding the processed shard
 		counter := 0
 		for _, shard := range w.shardStatus {
-			if shard.GetLeaseOwner() == w.workerID && shard.Checkpoint != chk.SHARD_END {
+			if shard.GetLeaseOwner() == w.workerID && shard.GetCheckpoint() != chk.SHARD_END {
 				counter++
 			}
 		}
@@ -381,7 +381,7 @@ func (w *Worker) eventLoop() {
 				}
 
 				// The shard is closed and we have processed all records
-				if shard.Checkpoint == chk.SHARD_END {
+				if shard.GetCheckpoint() == chk.SHARD_END {
 					continue
 				}
 
@@ -456,7 +456,7 @@ func (w *Worker) getShardIDs(nextToken string, shardInfo map[string]bool) error 
 			w.shardStatus[*s.ShardId] = &par.ShardStatus{
 				ID:                     *s.ShardId,
 				ParentShardId:          aws.StringValue(s.ParentShardId),
-				Mux:                    &sync.Mutex{},
+				Mux:                    &sync.RWMutex{},
 				StartingSequenceNumber: aws.StringValue(s.SequenceNumberRange.StartingSequenceNumber),
 				EndingSequenceNumber:   aws.StringValue(s.SequenceNumberRange.EndingSequenceNumber),
 			}
