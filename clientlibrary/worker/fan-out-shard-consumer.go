@@ -19,7 +19,6 @@
 package worker
 
 import (
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -27,18 +26,19 @@ import (
 
 	chk "github.com/vmware/vmware-go-kcl/clientlibrary/checkpoint"
 	kcl "github.com/vmware/vmware-go-kcl/clientlibrary/interfaces"
-	par "github.com/vmware/vmware-go-kcl/clientlibrary/partition"
 )
 
-// FanOutShardConsumer is responsible for consuming data records of a (specified) shard.
+// FanOutShardConsumer is  responsible for consuming data records of a (specified) shard.
 // Note: FanOutShardConsumer only deal with one shard.
+// For more info see: https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html
 type FanOutShardConsumer struct {
 	commonShardConsumer
-	stop       *chan struct{}
-	consumerID string
+	consumerARN string
+	consumerID  string
+	stop        *chan struct{}
 }
 
-// getRecords continously poll one shard for data record
+// getRecords subscribes to a shard and reads events from it.
 // Precondition: it currently has the lease on the shard.
 func (sc *FanOutShardConsumer) getRecords() error {
 	defer sc.releaseLease()
@@ -78,14 +78,14 @@ func (sc *FanOutShardConsumer) getRecords() error {
 	recordCheckpointer := NewRecordProcessorCheckpoint(sc.shard, sc.checkpointer)
 
 	var continuationSequenceNumber *string
-	refreshLease := time.After(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond).Sub(time.Now()))
+	refreshLeaseTimer := time.After(time.Until(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond)))
 	for {
 		select {
 		case <-*sc.stop:
 			shutdownInput := &kcl.ShutdownInput{ShutdownReason: kcl.REQUESTED, Checkpointer: recordCheckpointer}
 			sc.recordProcessor.Shutdown(shutdownInput)
 			return nil
-		case <-refreshLease:
+		case <-refreshLeaseTimer:
 			log.Debugf("Refreshing lease on shard: %s for worker: %s", sc.shard.ID, sc.consumerID)
 			err = sc.checkpointer.GetLease(sc.shard, sc.consumerID)
 			if err != nil {
@@ -98,7 +98,7 @@ func (sc *FanOutShardConsumer) getRecords() error {
 					sc.shard.ID, sc.consumerID, err)
 				return err
 			}
-			refreshLease = time.After(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond).Sub(time.Now()))
+			refreshLeaseTimer = time.After(time.Until(sc.shard.LeaseTimeout.Add(-time.Duration(sc.kclConfig.LeaseRefreshPeriodMillis) * time.Millisecond)))
 		case event, ok := <-shardSub.EventStream.Events():
 			if !ok {
 				// need to resubscribe to shard
@@ -119,12 +119,6 @@ func (sc *FanOutShardConsumer) getRecords() error {
 				continue
 			}
 			continuationSequenceNumber = subEvent.ContinuationSequenceNumber
-
-			// does this metric make sense for fan-out consumer?
-			//getRecordsStartTime := time.Now()
-			// Convert from nanoseconds to milliseconds
-			//getRecordsTime := time.Since(getRecordsStartTime) / 1000000
-			//sc.mService.RecordGetRecordsTime(shard.ID, float64(getRecordsTime))
 
 			processRecordsInput := &kcl.ProcessRecordsInput{
 				Records:            subEvent.Records,
@@ -151,35 +145,10 @@ func (sc *FanOutShardConsumer) subscribeToShard() (*kinesis.SubscribeToShardOutp
 	}
 
 	return sc.kc.SubscribeToShard(&kinesis.SubscribeToShardInput{
-		ConsumerARN:      &sc.kclConfig.ConsumerARN,
+		ConsumerARN:      &sc.consumerARN,
 		ShardId:          &sc.shard.ID,
 		StartingPosition: startPosition,
 	})
-}
-
-// Need to wait until the parent shard finished
-func (sc *commonShardConsumer) waitOnParentShard() error {
-	if len(sc.shard.ParentShardId) == 0 {
-		return nil
-	}
-
-	pshard := &par.ShardStatus{
-		ID:  sc.shard.ParentShardId,
-		Mux: &sync.Mutex{},
-	}
-
-	for {
-		if err := sc.checkpointer.FetchCheckpoint(pshard); err != nil {
-			return err
-		}
-
-		// Parent shard is finished.
-		if pshard.Checkpoint == chk.SHARD_END {
-			return nil
-		}
-
-		time.Sleep(time.Duration(sc.kclConfig.ParentShardPollIntervalMillis) * time.Millisecond)
-	}
 }
 
 func (sc *FanOutShardConsumer) resubscribe(shardSub *kinesis.SubscribeToShardOutput, continuationSequence *string) (*kinesis.SubscribeToShardOutput, error) {
@@ -193,12 +162,12 @@ func (sc *FanOutShardConsumer) resubscribe(shardSub *kinesis.SubscribeToShardOut
 		SequenceNumber: continuationSequence,
 	}
 	shardSub, err = sc.kc.SubscribeToShard(&kinesis.SubscribeToShardInput{
-		ConsumerARN:      &sc.kclConfig.ConsumerARN,
+		ConsumerARN:      &sc.consumerARN,
 		ShardId:          &sc.shard.ID,
 		StartingPosition: startPosition,
 	})
 	if err != nil {
-		sc.kclConfig.Logger.Errorf("Unable to get resubscribe to shard %s: %v", sc.shard.ID, err)
+		sc.kclConfig.Logger.Errorf("Unable to resubscribe to shard %s: %v", sc.shard.ID, err)
 		return nil, err
 	}
 	return shardSub, nil

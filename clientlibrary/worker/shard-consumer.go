@@ -29,10 +29,10 @@ package worker
 
 import (
 	"math"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/aws/aws-sdk-go/service/kinesis/kinesisiface"
 
@@ -42,30 +42,6 @@ import (
 	"github.com/vmware/vmware-go-kcl/clientlibrary/metrics"
 	par "github.com/vmware/vmware-go-kcl/clientlibrary/partition"
 )
-
-const (
-	// This is the initial state of a shard consumer. This causes the consumer to remain blocked until the all
-	// parent shards have been completed.
-	WAITING_ON_PARENT_SHARDS ShardConsumerState = iota + 1
-
-	// This state is responsible for initializing the record processor with the shard information.
-	INITIALIZING
-
-	//
-	PROCESSING
-
-	SHUTDOWN_REQUESTED
-
-	SHUTTING_DOWN
-
-	SHUTDOWN_COMPLETE
-
-	// ErrCodeKMSThrottlingException is defined in the API Reference https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/#Kinesis.GetRecords
-	// But it's not a constant?
-	ErrCodeKMSThrottlingException = "KMSThrottlingException"
-)
-
-type ShardConsumerState int
 
 // ShardConsumer is responsible for consuming data records of a (specified) shard.
 // Note: ShardConsumer only deal with one shard.
@@ -154,15 +130,13 @@ func (sc *ShardConsumer) getRecords() error {
 		// Get records from stream and retry as needed
 		getResp, err := sc.kc.GetRecords(getRecordsArgs)
 		if err != nil {
-			if awsErr, ok := err.(awserr.Error); ok {
-				if awsErr.Code() == kinesis.ErrCodeProvisionedThroughputExceededException || awsErr.Code() == ErrCodeKMSThrottlingException {
-					log.Errorf("Error getting records from shard %v: %+v", sc.shard.ID, err)
-					retriedErrors++
-					// exponential backoff
-					// https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Programming.Errors.html#Programming.Errors.RetryAndBackoff
-					time.Sleep(time.Duration(math.Exp2(float64(retriedErrors))*100) * time.Millisecond)
-					continue
-				}
+			if awsErrCode(err) == kinesis.ErrCodeProvisionedThroughputExceededException || awsErrCode(err) == kinesis.ErrCodeKMSThrottlingException {
+				log.Errorf("Error getting records from shard %v: %+v", sc.shard.ID, err)
+				retriedErrors++
+				// exponential backoff
+				// https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Programming.Errors.html#Programming.Errors.RetryAndBackoff
+				time.Sleep(time.Duration(math.Exp2(float64(retriedErrors))*100) * time.Millisecond)
+				continue
 			}
 			log.Errorf("Error getting records from Kinesis that cannot be retried: %+v Request: %s", err, getRecordsArgs)
 			return err
@@ -209,6 +183,7 @@ func (sc *ShardConsumer) getRecords() error {
 	}
 }
 
+// commonShardConsumer implements common functionality for regular and enhanced fan-out consumers
 type commonShardConsumer struct {
 	shard           *par.ShardStatus
 	kc              kinesisiface.KinesisAPI
@@ -234,6 +209,8 @@ func (sc *commonShardConsumer) releaseLease() {
 	sc.mService.LeaseLost(sc.shard.ID)
 }
 
+// getStartingPosition gets kinesis stating position.
+// First try to fetch checkpoint. If checkpoint is not found use InitialPositionInStream
 func (sc *commonShardConsumer) getStartingPosition() (*kinesis.StartingPosition, error) {
 	err := sc.checkpointer.FetchCheckpoint(sc.shard)
 	if err != nil && err != chk.ErrSequenceIDNotFound {
@@ -261,6 +238,31 @@ func (sc *commonShardConsumer) getStartingPosition() (*kinesis.StartingPosition,
 	return &kinesis.StartingPosition{
 		Type: shardIteratorType,
 	}, nil
+}
+
+// Need to wait until the parent shard finished
+func (sc *commonShardConsumer) waitOnParentShard() error {
+	if len(sc.shard.ParentShardId) == 0 {
+		return nil
+	}
+
+	pshard := &par.ShardStatus{
+		ID:  sc.shard.ParentShardId,
+		Mux: &sync.Mutex{},
+	}
+
+	for {
+		if err := sc.checkpointer.FetchCheckpoint(pshard); err != nil {
+			return err
+		}
+
+		// Parent shard is finished.
+		if pshard.Checkpoint == chk.SHARD_END {
+			return nil
+		}
+
+		time.Sleep(time.Duration(sc.kclConfig.ParentShardPollIntervalMillis) * time.Millisecond)
+	}
 }
 
 func (sc *commonShardConsumer) processRecords(input *kcl.ProcessRecordsInput) {

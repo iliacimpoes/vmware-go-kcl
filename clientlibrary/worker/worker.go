@@ -28,11 +28,14 @@
 package worker
 
 import (
+	"errors"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/aws/aws-sdk-go/service/kinesis/kinesisiface"
@@ -50,9 +53,10 @@ import (
  * the shards).
  */
 type Worker struct {
-	streamName string
-	regionName string
-	workerID   string
+	streamName  string
+	regionName  string
+	workerID    string
+	consumerARN string
 
 	processorFactory kcl.IRecordProcessorFactory
 	kclConfig        *config.KinesisClientLibConfiguration
@@ -194,6 +198,29 @@ func (w *Worker) initialize() error {
 		log.Infof("Use custom checkpointer implementation.")
 	}
 
+	if w.kclConfig.EnhancedFanOutConsumer {
+		log.Debugf("Enhanced fan-out is enabled")
+		if w.kclConfig.EnhancedFanOutConsumerName == "" {
+			return errors.New("Missing enhanced fan-out consumer name")
+		}
+		// try to fetch consumer ARN. Retry 10 times with exponential backoff in case of an error
+		for retry := 0; ; retry++ {
+			consumerARN, err := w.fetchConsumerARN()
+			if err != nil && retry < 10 {
+				sleepDuration := time.Duration(math.Exp2(float64(retry))*100) * time.Millisecond
+				log.Errorf("Could not get consumer ARN: %v, retrying after: %s", err, sleepDuration)
+				time.Sleep(sleepDuration)
+				continue
+			}
+			if err != nil {
+				log.Errorf("Could not get consumer ARN: %v", err)
+				return err
+			}
+			w.consumerARN = consumerARN
+			break
+		}
+	}
+
 	err := w.mService.Init(w.kclConfig.ApplicationName, w.streamName, w.workerID)
 	if err != nil {
 		log.Errorf("Failed to start monitoring service: %+v", err)
@@ -217,6 +244,56 @@ func (w *Worker) initialize() error {
 	return nil
 }
 
+// fetchConsumerARN gets enhanced fan-out consumerARN.
+// Registers enhanced fan-out consumer if the consumer is not found
+func (w *Worker) fetchConsumerARN() (string, error) {
+	log := w.kclConfig.Logger
+	log.Debugf("Fetching stream consumer ARN")
+	streamDescription, err := w.kc.DescribeStream(&kinesis.DescribeStreamInput{
+		StreamName: &w.kclConfig.StreamName,
+	})
+	if err != nil {
+		log.Errorf("Could not describe stream: %v", err)
+		return "", err
+	}
+	streamConsumerDescription, err := w.kc.DescribeStreamConsumer(&kinesis.DescribeStreamConsumerInput{
+		ConsumerName: &w.kclConfig.EnhancedFanOutConsumerName,
+		StreamARN:    streamDescription.StreamDescription.StreamARN,
+	})
+	if err == nil {
+		log.Infof("Enhanced fan-out consumer found, consumer status: %s", *streamConsumerDescription.ConsumerDescription.ConsumerStatus)
+		if *streamConsumerDescription.ConsumerDescription.ConsumerStatus != kinesis.ConsumerStatusActive {
+			return "", errors.New("consumer is not in active state yet")
+		}
+		return *streamConsumerDescription.ConsumerDescription.ConsumerARN, nil
+	}
+	if awsErrCode(err) == kinesis.ErrCodeResourceNotFoundException {
+		log.Infof("Enhanced fan-out consumer not found, registering new consumer with name: %s", w.kclConfig.EnhancedFanOutConsumerName)
+		out, err := w.kc.RegisterStreamConsumer(&kinesis.RegisterStreamConsumerInput{
+			ConsumerName: &w.kclConfig.EnhancedFanOutConsumerName,
+			StreamARN:    streamDescription.StreamDescription.StreamARN,
+		})
+		if err != nil {
+			log.Errorf("Could not register enhanced fan-out consumer: %v", err)
+			return "", err
+		}
+		if *streamConsumerDescription.ConsumerDescription.ConsumerStatus != kinesis.ConsumerStatusActive {
+			return "", errors.New("consumer is not in active state yet")
+		}
+		return *out.Consumer.ConsumerARN, nil
+	}
+	log.Errorf("Could not describe stream consumer: %v", err)
+	return "", err
+}
+
+func awsErrCode(err error) string {
+	awsErr, _ := err.(awserr.Error)
+	if awsErr != nil {
+		return awsErr.Code()
+	}
+	return ""
+}
+
 // newShardConsumer to create a shard consumer instance
 func (w *Worker) newShardConsumer(shard *par.ShardStatus) *ShardConsumer {
 	return &ShardConsumer{
@@ -235,8 +312,8 @@ func (w *Worker) newShardConsumer(shard *par.ShardStatus) *ShardConsumer {
 	}
 }
 
-// newShardConsumer to create a shard consumer instance
-func (w *Worker) newFanoutShardConsumer(shard *par.ShardStatus) *FanOutShardConsumer {
+// newFanOutShardConsumer to create a new fan-out shard consumer instance
+func (w *Worker) newFanOutShardConsumer(shard *par.ShardStatus) *FanOutShardConsumer {
 	return &FanOutShardConsumer{
 		commonShardConsumer: commonShardConsumer{
 			shard:           shard,
@@ -246,8 +323,9 @@ func (w *Worker) newFanoutShardConsumer(shard *par.ShardStatus) *FanOutShardCons
 			kclConfig:       w.kclConfig,
 			mService:        w.mService,
 		},
-		consumerID: w.workerID,
-		stop:       w.stop,
+		consumerARN: w.consumerARN,
+		consumerID:  w.workerID,
+		stop:        w.stop,
 	}
 }
 
@@ -261,7 +339,7 @@ func (w *Worker) eventLoop() {
 		// starts at the same time, this decreases the probability of them calling
 		// kinesis.DescribeStream at the same time, and hit the hard-limit on aws API calls.
 		// On average the period remains the same so that doesn't affect behavior.
-		shardSyncSleep := w.kclConfig.ShardSyncIntervalMillis/2 + w.rng.Intn(int(w.kclConfig.ShardSyncIntervalMillis))
+		shardSyncSleep := w.kclConfig.ShardSyncIntervalMillis/2 + w.rng.Intn(w.kclConfig.ShardSyncIntervalMillis)
 
 		err := w.syncShard()
 		if err != nil {
@@ -317,13 +395,18 @@ func (w *Worker) eventLoop() {
 
 				// log metrics on got lease
 				w.mService.LeaseGained(shard.ID)
-
-				log.Infof("Start Fan-out Shard Consumer for shard: %v", shard.ID)
-				sc := w.newFanoutShardConsumer(shard)
+				var shardConsumer interface{ getRecords() error }
+				if w.kclConfig.EnhancedFanOutConsumer {
+					log.Infof("Start enhanced fan-out shard consumer for shard: %v", shard.ID)
+					shardConsumer = w.newFanOutShardConsumer(shard)
+				} else {
+					log.Infof("Start shard consumer for shard: %v", shard.ID)
+					shardConsumer = w.newShardConsumer(shard)
+				}
 				w.waitGroup.Add(1)
 				go func() {
 					defer w.waitGroup.Done()
-					if err := sc.getRecords(); err != nil {
+					if err := shardConsumer.getRecords(); err != nil {
 						log.Errorf("Error in getRecords: %+v", err)
 					}
 				}()
