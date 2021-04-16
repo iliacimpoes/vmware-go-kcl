@@ -283,7 +283,7 @@ func empty(s string) bool {
 	return len(strings.TrimSpace(s)) == 0
 }
 
-// checkIsValueNotEmpty make sure the value is not empty.
+// checkIsValueNotEmpty makes sure the value is not empty.
 func checkIsValueNotEmpty(key string, value string) {
 	if empty(value) {
 		// There is no point to continue for incorrect configuration. Fail fast!
@@ -291,7 +291,7 @@ func checkIsValueNotEmpty(key string, value string) {
 	}
 }
 
-// checkIsValuePositive make sure the value is possitive.
+// checkIsValuePositive makes sure the value is possitive.
 func checkIsValuePositive(key string, value int) {
 	if value <= 0 {
 		// There is no point to continue for incorrect configuration. Fail fast!

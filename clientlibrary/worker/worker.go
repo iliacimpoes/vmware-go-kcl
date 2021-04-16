@@ -199,26 +199,27 @@ func (w *Worker) initialize() error {
 		log.Infof("Use custom checkpointer implementation.")
 	}
 
-	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN == "" {
+	if w.kclConfig.EnableEnhancedFanOutConsumer {
 		log.Debugf("Enhanced fan-out is enabled")
-		if w.kclConfig.EnhancedFanOutConsumerName == "" {
-			return errors.New("Missing enhanced fan-out consumer name")
-		}
-		// try to fetch consumer ARN. Retry 10 times with exponential backoff in case of an error
-		for retry := 0; ; retry++ {
-			consumerARN, err := w.fetchConsumerARN()
-			if err != nil && retry < 10 {
-				sleepDuration := time.Duration(math.Exp2(float64(retry))*100) * time.Millisecond
-				log.Errorf("Could not get consumer ARN: %v, retrying after: %s", err, sleepDuration)
-				time.Sleep(sleepDuration)
-				continue
-			}
+		switch {
+		case w.kclConfig.EnhancedFanOutConsumerARN != "":
+			w.consumerARN = w.kclConfig.EnhancedFanOutConsumerARN
+		case w.kclConfig.EnhancedFanOutConsumerName != "":
+			var err error
+			w.consumerARN, err = w.fetchConsumerARNWithRetry()
 			if err != nil {
-				log.Errorf("Could not get consumer ARN: %v", err)
+				log.Errorf("Failed to fetch consumer ARN for: %s, %v", w.kclConfig.EnhancedFanOutConsumerName, err)
 				return err
 			}
-			w.consumerARN = consumerARN
-			break
+		default:
+			log.Errorf("Consumer Name or ARN were not specified with enhanced fan-out enabled")
+			return errors.New("Consumer Name or ARN must be specified when enhanced fan-out is enabled")
+		}
+	}
+
+	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN == "" {
+		if w.kclConfig.EnhancedFanOutConsumerName == "" {
+			return errors.New("Missing enhanced fan-out consumer name")
 		}
 	}
 	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN != "" {
@@ -246,6 +247,23 @@ func (w *Worker) initialize() error {
 	log.Infof("Initialization complete.")
 
 	return nil
+}
+
+// fetchConsumerARNWithRetry tries to fetch consumer ARN. Retries 10 times with exponential backoff in case of an error
+func (w *Worker) fetchConsumerARNWithRetry() (string, error) {
+	for retry := 0; ; retry++ {
+		consumerARN, err := w.fetchConsumerARN()
+		if err == nil {
+			return consumerARN, nil
+		}
+		if retry < 10 {
+			sleepDuration := time.Duration(math.Exp2(float64(retry))*100) * time.Millisecond
+			w.kclConfig.Logger.Errorf("Could not get consumer ARN: %v, retrying after: %s", err, sleepDuration)
+			time.Sleep(sleepDuration)
+			continue
+		}
+		return consumerARN, err
+	}
 }
 
 // fetchConsumerARN gets enhanced fan-out consumerARN.
