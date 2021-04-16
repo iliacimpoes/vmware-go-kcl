@@ -79,7 +79,7 @@ func TestWorkerInjectCheckpointer(t *testing.T) {
 	// verify the checkpointer after graceful shutdown
 	status := &par.ShardStatus{
 		ID:  shardID,
-		Mux: &sync.Mutex{},
+		Mux: &sync.RWMutex{},
 	}
 	checkpointer.FetchCheckpoint(status)
 

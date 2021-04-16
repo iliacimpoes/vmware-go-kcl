@@ -39,7 +39,7 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, "appName", kclConfig.ApplicationName)
 	assert.Equal(t, 500, kclConfig.FailoverTimeMillis)
 	assert.Equal(t, 10, kclConfig.TaskBackoffTimeMillis)
-	assert.True(t, kclConfig.EnhancedFanOutConsumer)
+	assert.True(t, kclConfig.EnableEnhancedFanOutConsumer)
 	assert.Equal(t, "fan-out-consumer", kclConfig.EnhancedFanOutConsumerName)
 
 	contextLogger := kclConfig.Logger.WithFields(logger.Fields{"key1": "value1"})
@@ -50,6 +50,22 @@ func TestConfig(t *testing.T) {
 func TestEmptyEnhancedFanOutConsumerName(t *testing.T) {
 	assert.PanicsWithValue(t, "Non-empty value expected for EnhancedFanOutConsumerName, actual: ", func() {
 		NewKinesisClientLibConfig("app", "stream", "us-west-2", "worker").WithEnhancedFanOutConsumer("")
+	})
+
+}
+
+func TestConfigWithEnhancedFanOutConsumerARN(t *testing.T) {
+	kclConfig := NewKinesisClientLibConfig("app", "stream", "us-west-2", "worker").
+		WithEnhancedFanOutConsumerARN("consumer:arn")
+
+	assert.True(t, kclConfig.EnableEnhancedFanOutConsumer)
+	assert.Equal(t, "consumer:arn", kclConfig.EnhancedFanOutConsumerARN)
+
+}
+
+func TestEmptyEnhancedFanOutConsumerARN(t *testing.T) {
+	assert.PanicsWithValue(t, "Non-empty value expected for EnhancedFanOutConsumerARN, actual: ", func() {
+		NewKinesisClientLibConfig("app", "stream", "us-west-2", "worker").WithEnhancedFanOutConsumerARN("")
 	})
 
 }

@@ -179,9 +179,16 @@ type (
 		// StreamName is the name of Kinesis stream
 		StreamName string
 
+		// EnableEnhancedFanOutConsumer enables enhanced fan-out consumer
+		// See: https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html
+		// Either consumer name or consumer ARN must be specified when Enhanced Fan-Out is enabled.
+		EnableEnhancedFanOutConsumer bool
+
 		// EnhancedFanOutConsumerName is the name of Kinesis Enhanced Fan-Out consumer.
-		// Is required when enhanced fan-out is enabled
 		EnhancedFanOutConsumerName string
+
+		// EnhancedFanOutConsumerARN is the ARN of Kinesis Enhanced Fan-Out consumer.
+		EnhancedFanOutConsumerARN string
 
 		// WorkerID used to distinguish different workers/processes of a Kinesis application
 		WorkerID string
@@ -191,10 +198,6 @@ type (
 
 		// InitialPositionInStreamExtended provides actual AT_TMESTAMP value
 		InitialPositionInStreamExtended InitialPositionInStreamExtended
-
-		// EnhancedFanOutConsumer enables enhanced fan-out consumer
-		// See: https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html
-		EnhancedFanOutConsumer bool
 
 		// credentials to access Kinesis/Dynamo: https://docs.aws.amazon.com/sdk-for-go/api/aws/credentials/
 		// Note: No need to configure here. Use NewEnvCredentials for testing and EC2RoleProvider for production

@@ -219,6 +219,16 @@ func (c *KinesisClientLibConfiguration) WithMonitoringService(mService metrics.M
 func (c *KinesisClientLibConfiguration) WithEnhancedFanOutConsumer(consumerName string) *KinesisClientLibConfiguration {
 	checkIsValueNotEmpty("EnhancedFanOutConsumerName", consumerName)
 	c.EnhancedFanOutConsumerName = consumerName
-	c.EnhancedFanOutConsumer = true
+	c.EnableEnhancedFanOutConsumer = true
+	return c
+}
+
+// WithEnhancedFanOutConsumerARN enables enhanced fan-out consumer with the specified consumer ARN
+// For more info see: https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html
+// Note: You can register up to twenty consumers per stream to use enhanced fan-out.
+func (c *KinesisClientLibConfiguration) WithEnhancedFanOutConsumerARN(consumerARN string) *KinesisClientLibConfiguration {
+	checkIsValueNotEmpty("EnhancedFanOutConsumerARN", consumerARN)
+	c.EnhancedFanOutConsumerARN = consumerARN
+	c.EnableEnhancedFanOutConsumer = true
 	return c
 }

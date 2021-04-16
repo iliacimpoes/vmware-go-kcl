@@ -199,7 +199,7 @@ func (w *Worker) initialize() error {
 		log.Infof("Use custom checkpointer implementation.")
 	}
 
-	if w.kclConfig.EnhancedFanOutConsumer {
+	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN == "" {
 		log.Debugf("Enhanced fan-out is enabled")
 		if w.kclConfig.EnhancedFanOutConsumerName == "" {
 			return errors.New("Missing enhanced fan-out consumer name")
@@ -220,6 +220,9 @@ func (w *Worker) initialize() error {
 			w.consumerARN = consumerARN
 			break
 		}
+	}
+	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN != "" {
+		w.consumerARN = w.kclConfig.EnhancedFanOutConsumerARN
 	}
 
 	err := w.mService.Init(w.kclConfig.ApplicationName, w.streamName, w.workerID)
@@ -397,7 +400,7 @@ func (w *Worker) eventLoop() {
 				// log metrics on got lease
 				w.mService.LeaseGained(shard.ID)
 				var shardConsumer interface{ getRecords() error }
-				if w.kclConfig.EnhancedFanOutConsumer {
+				if w.kclConfig.EnableEnhancedFanOutConsumer {
 					log.Infof("Start enhanced fan-out shard consumer for shard: %v", shard.ID)
 					shardConsumer = w.newFanOutShardConsumer(shard)
 				} else {

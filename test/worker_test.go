@@ -203,6 +203,38 @@ func TestEnhancedFanOutConsumer(t *testing.T) {
 	runTest(kclConfig, false, t)
 }
 
+func TestEnhancedFanOutConsumerARN(t *testing.T) {
+	t.Skip("Need to provide actual consumerARN")
+
+	consumerARN := "arn:aws:kinesis:*:stream/kcl-test/consumer/fanout-poc-consumer-test:*"
+	// At miminal. use standard logrus logger
+	// log := logger.NewLogrusLogger(logrus.StandardLogger())
+	//
+	// In order to have precise control over logging. Use logger with config
+	config := logger.Configuration{
+		EnableConsole:     true,
+		ConsoleLevel:      logger.Debug,
+		ConsoleJSONFormat: false,
+		EnableFile:        true,
+		FileLevel:         logger.Info,
+		FileJSONFormat:    true,
+		Filename:          "log.log",
+	}
+	// Use logrus logger
+	log := logger.NewLogrusLoggerWithConfig(config)
+
+	kclConfig := cfg.NewKinesisClientLibConfig(appName, streamName, regionName, workerID).
+		WithInitialPositionInStream(cfg.LATEST).
+		WithEnhancedFanOutConsumerARN(consumerARN).
+		WithMaxRecords(10).
+		WithMaxLeasesForWorker(1).
+		WithShardSyncIntervalMillis(5000).
+		WithFailoverTimeMillis(300000).
+		WithLogger(log)
+
+	runTest(kclConfig, false, t)
+}
+
 func runTest(kclConfig *cfg.KinesisClientLibConfiguration, triggersig bool, t *testing.T) {
 	assert.Equal(t, regionName, kclConfig.RegionName)
 	assert.Equal(t, streamName, kclConfig.StreamName)
