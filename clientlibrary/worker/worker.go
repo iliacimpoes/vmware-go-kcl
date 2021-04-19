@@ -217,15 +217,6 @@ func (w *Worker) initialize() error {
 		}
 	}
 
-	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN == "" {
-		if w.kclConfig.EnhancedFanOutConsumerName == "" {
-			return errors.New("Missing enhanced fan-out consumer name")
-		}
-	}
-	if w.kclConfig.EnableEnhancedFanOutConsumer && w.kclConfig.EnhancedFanOutConsumerARN != "" {
-		w.consumerARN = w.kclConfig.EnhancedFanOutConsumerARN
-	}
-
 	err := w.mService.Init(w.kclConfig.ApplicationName, w.streamName, w.workerID)
 	if err != nil {
 		log.Errorf("Failed to start monitoring service: %+v", err)

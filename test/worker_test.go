@@ -175,7 +175,7 @@ func TestWorkerAssumeRole(t *testing.T) {
 }
 
 func TestEnhancedFanOutConsumer(t *testing.T) {
-	// At miminal. use standard logrus logger
+	// At miminal, use standard logrus logger
 	// log := logger.NewLogrusLogger(logrus.StandardLogger())
 	//
 	// In order to have precise control over logging. Use logger with config
@@ -207,7 +207,7 @@ func TestEnhancedFanOutConsumerARN(t *testing.T) {
 	t.Skip("Need to provide actual consumerARN")
 
 	consumerARN := "arn:aws:kinesis:*:stream/kcl-test/consumer/fanout-poc-consumer-test:*"
-	// At miminal. use standard logrus logger
+	// At miminal, use standard logrus logger
 	// log := logger.NewLogrusLogger(logrus.StandardLogger())
 	//
 	// In order to have precise control over logging. Use logger with config
